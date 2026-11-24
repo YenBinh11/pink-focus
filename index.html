@@ -195,6 +195,20 @@ dialog input[type=text],dialog input[type=number]{width:100%;background:var(--in
 .filewarn{font-size:12px;color:var(--acc);margin:6px 0}
 #snd-n,#mus-n{text-align:right;max-width:70%;font-size:12px}
 @media(max-width:720px){#mus{width:auto}}
+
+.mus-art{height:120px;border-radius:12px;background:linear-gradient(135deg,var(--dark),var(--acc));display:grid;place-items:center;color:var(--on-acc)}
+.mus-art svg{width:48px;height:48px}
+.mus-ctl{margin-top:10px}
+.mus-title{font-weight:600;font-size:15px;line-height:1.3;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#mus-seek,#mus-vol{accent-color:var(--acc)}
+#mus-seek{width:100%;margin:0}
+.mus-time{display:flex;justify-content:space-between;font-size:12px;color:var(--dim)}
+.mus-btns{display:flex;align-items:center;gap:10px;margin-top:6px}
+.mus-btns button{flex:none;width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:transparent;color:var(--txt);display:grid;place-items:center;padding:0;cursor:pointer}
+.mus-btns button.main{width:46px;height:46px;background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.mus-btns button:disabled{opacity:.35;cursor:default}
+.mus-btns svg{width:18px;height:18px;fill:currentColor}
+.mus-btns input{flex:1;min-width:0}
 </style>
 </head>
 <body>
@@ -265,9 +279,20 @@ dialog input[type=text],dialog input[type=number]{width:100%;background:var(--in
   <select id="mus-sel" aria-label="Choose a playlist"></select>
   <p class="empty" id="mus-empty">No playlists yet. Add your first one below.</p>
   <div id="mus-player"></div>
+  <div class="mus-ctl" id="mus-ctl">
+    <div class="mus-title" id="mus-title"></div>
+    <input type="range" id="mus-seek" min="0" max="1000" value="0" aria-label="Seek">
+    <div class="mus-time"><span id="mus-cur">0:00</span><span id="mus-dur">0:00</span></div>
+    <div class="mus-btns">
+      <button type="button" id="mus-prev" aria-label="Previous"></button>
+      <button type="button" id="mus-play" class="main" aria-label="Play"></button>
+      <button type="button" id="mus-next" aria-label="Next"></button>
+      <input type="range" id="mus-vol" min="0" max="100" aria-label="Music volume">
+    </div>
+  </div>
   <div class="mus-add">
     <input type="text" id="mus-name" maxlength="40" placeholder="Name, e.g. Lofi study" aria-label="Playlist name">
-    <input type="text" id="mus-url" placeholder="Paste a YouTube or Spotify link" aria-label="Playlist link">
+    <input type="text" id="mus-url" placeholder="YouTube / Spotify link, or file like music/song.m4a" aria-label="Playlist link">
     <div class="mus-row"><button class="btn main" id="mus-add" type="button">Add playlist</button><button class="btn" id="mus-del" type="button">Remove this one</button></div>
     <p id="mus-msg" aria-live="polite"></p>
   </div>
@@ -539,6 +564,7 @@ function ytSrc(o){
   var q=['enablejsapi=1','playsinline=1','rel=0'];
   if(/^https?:$/.test(location.protocol))q.push('origin='+encodeURIComponent(location.origin));
   if(o.controls===0)q.push('controls=0');
+  if(o.clean)q.push('controls=0','disablekb=1','fs=0','iv_load_policy=3');
   if(o.ap)q.push('autoplay=1');
   return(o.l?'https://www.youtube.com/embed/videoseries?list='+o.l+'&':'https://www.youtube.com/embed/'+o.v+'?')+q.join('&');
 }
@@ -547,18 +573,20 @@ function mkFrame(src,title){
   f.allow='autoplay; encrypted-media; picture-in-picture; clipboard-write; fullscreen';
   f.referrerPolicy='strict-origin-when-cross-origin';f.src=src;return f;
 }
-if(location.protocol==='file:'){['snd','mus'].forEach(function(id){
+if(location.protocol==='file:'){['mus'].forEach(function(id){
   var w=document.createElement('p');w.className='filewarn';
-  w.textContent='Opened from file:// - YouTube will not play. Run a local server (http://localhost) or use GitHub Pages.';
+  w.textContent='Opened from file:// - YouTube will not play (your own audio files still do). Run a local server (http://localhost) or use GitHub Pages.';
   $(id).insertBefore(w,$(id).children[1]);
 })}
 
-/* ================= Ambient sounds (one at a time) ================= */
-var SND=[{k:'rain',n:'Rain',e:'🌧️',id:'q76bMs-NwRk'},{k:'stream',n:'Stream',e:'🏞️',id:'B2Em_b4Xx_I'},{k:'lib',n:'Library',e:'📚',id:'4vIQON2fDWM'}];
-var sCur=null,ambP=null,ambReady=false,aCtx=null,aMaster=null,BUFS={};
+/* ================= Ambient sounds: your own files in /sounds, one at a time ================= */
+/* Put rain.m4a, stream.m4a (and optionally library.m4a) in the sounds/ folder.
+   A missing or broken file falls back to a built-in generated sound. */
+var SND=[{k:'rain',n:'Rain',e:'🌧️',f:'sounds/rain.m4a'},{k:'stream',n:'Stream',e:'🏞️',f:'sounds/stream.m4a'},{k:'lib',n:'Library',e:'📚',f:'sounds/library.m4a'}];
+var sCur=null,aCtx=null,aMaster=null,BUFS={};
 if(typeof S.vol!=='number')S.vol=50;
+if(typeof S.mvol!=='number')S.mvol=80;
 function skey(k){for(var i=0;i<SND.length;i++)if(SND[i].k===k)return SND[i]}
-/* built-in generated sound: only used as a fallback when YouTube fails */
 function ac(){
   if(!aCtx){var C=window.AudioContext||window.webkitAudioContext;if(!C)return null;aCtx=new C();aMaster=aCtx.createGain();aMaster.connect(aCtx.destination)}
   if(aCtx.state==='suspended')aCtx.resume();
@@ -595,44 +623,29 @@ function synthStart(k){
     setTimeout(function(){nodes.forEach(function(n){try{n.stop()}catch(e){}});try{g.disconnect()}catch(e){}},600)}};
 }
 
+
+function sndKillAudio(st){if(st&&st.audio){var a=st.audio;st.audio=null;a.pause();a.removeAttribute('src');try{a.load()}catch(e){}}}
 function sndFallback(st,why){
   if(!st||sCur!==st||st.mode==='synth')return;
-  clearTimeout(st.t);st.mode='synth';st.note=why+' · using built-in sound';st.synth=synthStart(st.k);
-  if(ambP&&ambReady){try{ambP.pauseVideo()}catch(e){}}
+  clearTimeout(st.t);sndKillAudio(st);st.mode='synth';st.note=why+' · using built-in sound';st.synth=synthStart(st.k);
   console.warn('[sound]',why);sndRender();
 }
-function ambStart(st){
-  var s=skey(st.k);
-  st.t=setTimeout(function(){sndFallback(st,'No response from YouTube')},9000);
-  loadYT(function(){
-    if(sCur!==st)return;
-    if(ambP&&ambReady){ambP.loadVideoById(s.id);ambP.unMute();ambP.setVolume(S.vol);return}
-    if(ambP)return;                              // still creating: its onReady loads the current sound
-    var f=mkFrame(ytSrc({v:s.id,controls:0,ap:1}),'Ambient sound');
-    $('snd-fr').appendChild(f);
-    ambP=new YT.Player(f,{events:{
-      onReady:function(e){
-        ambReady=true;var c=sCur&&sCur.mode==='yt'?skey(sCur.k):null;
-        if(c){e.target.unMute();e.target.setVolume(S.vol);e.target.loadVideoById(c.id)}
-      },
-      onStateChange:function(e){
-        if(!sCur||sCur.mode!=='yt')return;
-        if(e.data===1){clearTimeout(sCur.t);sCur.note='';sndRender()}        // PLAYING
-        else if(e.data===0){e.target.seekTo(0);e.target.playVideo()}          // ENDED -> loop
-      },
-      onError:function(e){sndFallback(sCur,'Error '+e.data+' ('+(YT_ERR[e.data]||'unknown')+')')},
-      onAutoplayBlocked:function(){sndFallback(sCur,'Autoplay blocked')}
-    }});
-  },function(){sndFallback(st,'Could not load the YouTube API')});
+function sndStart(st){
+  var s=skey(st.k),a=new Audio();a.loop=true;a.preload='auto';a.volume=S.vol/100;st.audio=a;
+  a.addEventListener('error',function(){sndFallback(st,'Could not load '+s.f)});
+  a.addEventListener('playing',function(){if(sCur===st&&st.mode==='file'){clearTimeout(st.t);st.note='';sndRender()}});
+  a.src=s.f;
+  var pr=a.play();
+  if(pr&&pr.catch)pr.catch(function(e){if(e&&e.name==='NotAllowedError')sndFallback(st,'Autoplay blocked')});
+  st.t=setTimeout(function(){sndFallback(st,'Audio took too long to load')},15000);
 }
 function sndStop(){
   var st=sCur;sCur=null;if(!st)return;
-  clearTimeout(st.t);if(st.synth)st.synth.stop();
-  if(ambP&&ambReady){try{ambP.pauseVideo()}catch(e){}}
+  clearTimeout(st.t);sndKillAudio(st);if(st.synth)st.synth.stop();
 }
 function sndToggle(s){
   var same=sCur&&sCur.k===s.k;sndStop();           // only one sound at a time
-  if(!same){var st={k:s.k,mode:'yt',note:'Loading…',synth:null};sCur=st;ac();ambStart(st)}
+  if(!same){var st={k:s.k,mode:'file',note:'Loading…',synth:null,audio:null};sCur=st;ac();sndStart(st)}
   sndRender();
 }
 function sndRender(){
@@ -648,17 +661,24 @@ function sndRender(){
 $('snd-v').value=S.vol;
 $('snd-v').oninput=function(){
   S.vol=+this.value;save();if(aMaster)aMaster.gain.value=S.vol/100;
-  if(ambP&&ambReady){try{ambP.setVolume(S.vol)}catch(e){}}
+  if(sCur&&sCur.audio)sCur.audio.volume=S.vol/100;
 };
 $('snd-btn').onclick=function(){$('cal').classList.remove('on');$('mus').classList.remove('on');$('snd').classList.toggle('on')};
 sndRender();
 
-/* ================= Music: saved playlists in a dropdown ================= */
+/* ================= Music: own controls for YouTube videos and your own audio files ================= */
 S.playlists=S.playlists||[];if(typeof S.plSel!=='number')S.plSel=0;
 if(!S.musSeed){S.musSeed=1;S.playlists.push({n:'Lowg rét run',t:'yt',v:'QXMOyk5Z5io'});save()}
-var musKey='',musOpened=false,musP=null;
+var musKey='',musOpened=false,musP=null,musA=null,musReady=false,musTimer=null,musDrag=false;
+var I_PLAY='<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',I_PAUSE='<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
+    I_PREV='<svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg>',I_NEXT='<svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg>',
+    I_NOTE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>';
+function fmt(t){t=Math.max(0,Math.floor(t||0));var m=Math.floor(t/60),r=t%60;return m+':'+(r<10?'0':'')+r}
+function musIcon(on){$('mus-play').innerHTML=on?I_PAUSE:I_PLAY;$('mus-play').setAttribute('aria-label',on?'Pause':'Play')}
 function embedOf(u){
-  u=(u||'').trim();var m=u.match(/open\.spotify\.com\/(?:intl-[a-z]+\/)?(playlist|album|track|artist|show|episode)\/([A-Za-z0-9]+)/);
+  u=(u||'').trim();
+  if(/\.(m4a|mp3|ogg|oga|wav|aac|opus|flac)(\?.*)?$/i.test(u))return{t:'file',f:u};
+  var m=u.match(/open\.spotify\.com\/(?:intl-[a-z]+\/)?(playlist|album|track|artist|show|episode)\/([A-Za-z0-9]+)/);
   if(m)return{t:'sp',u:'https://open.spotify.com/embed/'+m[1]+'/'+m[2]};
   if(/youtube\.com|youtu\.be/.test(u)){
     var l=u.match(/[?&]list=([\w-]+)/);if(l)return{t:'yt',l:l[1]};
@@ -666,12 +686,29 @@ function embedOf(u){
   }
   return null;
 }
-function normPl(p){                               // upgrade playlists saved by older versions
+function normPl(p){
   if(p.t==='yt'&&!p.v&&!p.l&&p.u){var l=p.u.match(/list=([\w-]+)/),v=p.u.match(/embed\/([\w-]{11})/);if(l)p.l=l[1];else if(v)p.v=v[1]}
   return p;
 }
 function musMsg(t){$('mus-msg').textContent=t||''}
-function killMus(){if(musP){try{musP.destroy()}catch(e){}musP=null}}
+function killMus(){
+  clearInterval(musTimer);musTimer=null;musReady=false;musDrag=false;
+  if(musP){try{musP.destroy()}catch(e){}musP=null}
+  if(musA){musA.pause();musA.removeAttribute('src');try{musA.load()}catch(e){}musA=null}
+  musIcon(false);$('mus-seek').value=0;$('mus-cur').textContent='0:00';$('mus-dur').textContent='0:00';
+}
+function musDur(){return musP&&musReady?musP.getDuration():(musA&&musA.duration)||0}
+function musTick(){
+  if(!musP||!musReady||musDrag)return;
+  try{var d=musP.getDuration(),c=musP.getCurrentTime();$('mus-seek').value=d?Math.round(c/d*1000):0;$('mus-cur').textContent=fmt(c);$('mus-dur').textContent=fmt(d)}catch(e){}
+}
+function musRestart(){if(musP&&musReady){musP.seekTo(0,true);musP.playVideo()}else if(musA){musA.currentTime=0;musA.play().catch(function(){})}}
+function musStep(d,auto){                          // previous / next
+  var p=S.playlists[S.plSel],n=S.playlists.length;
+  if(p&&p.l&&musP&&musReady&&!auto){if(d>0)musP.nextVideo();else musP.previousVideo();return}
+  if(n<2){if(auto)musRestart();return}
+  S.plSel=(S.plSel+d+n)%n;save();musRender(true);
+}
 function musRender(ap){
   var sel=$('mus-sel'),n=S.playlists.length;sel.innerHTML='';
   S.playlists.forEach(function(p,i){var o=document.createElement('option');o.value=i;o.textContent=p.n;sel.appendChild(o)});
@@ -681,18 +718,55 @@ function musRender(ap){
   $('mus-n').textContent=n?n+(n===1?' playlist':' playlists'):'';
   if(!musOpened)return;
   var p=S.playlists[S.plSel],box=$('mus-player');
-  if(!p){killMus();box.innerHTML='';musKey='';return}
+  if(!p){killMus();box.innerHTML='';musKey='';$('mus-ctl').style.display='none';return}
   normPl(p);
-  var key=[p.t,p.v||'',p.l||'',p.u||''].join('|');
+  var key=[p.t,p.v||'',p.l||'',p.u||'',p.f||''].join('|');
   if(key===musKey)return;
   musKey=key;killMus();box.innerHTML='';musMsg('');
+  $('mus-ctl').style.display=p.t==='sp'?'none':'';
+  $('mus-title').textContent=p.n;
+  $('mus-prev').disabled=$('mus-next').disabled=!(p.l||n>1);
   if(p.t==='sp'){var sf=mkFrame(p.u,p.n);sf.style.height='352px';box.appendChild(sf);return}
-  var f=mkFrame(ytSrc({v:p.v,l:p.l,ap:ap}),p.n);f.style.height='230px';box.appendChild(f);
+  if(p.t==='file'){
+    var art=document.createElement('div');art.className='mus-art';art.innerHTML=I_NOTE;box.appendChild(art);
+    var a=new Audio();a.preload='metadata';a.volume=S.mvol/100;musA=a;
+    a.onloadedmetadata=function(){$('mus-dur').textContent=fmt(a.duration)};
+    a.ontimeupdate=function(){if(!musDrag){$('mus-seek').value=a.duration?Math.round(a.currentTime/a.duration*1000):0;$('mus-cur').textContent=fmt(a.currentTime)}};
+    a.onplay=function(){musIcon(true)};a.onpause=function(){musIcon(false)};
+    a.onended=function(){musStep(1,true)};
+    a.onerror=function(){musIcon(false);musMsg('Could not load '+p.f+'. Check the file path in your repo.')};
+    a.src=p.f;
+    if(ap){var pr=a.play();if(pr&&pr.catch)pr.catch(function(){})}
+    return;
+  }
+  var f=mkFrame(ytSrc({v:p.v,l:p.l,ap:ap,clean:1}),p.n);f.style.height='200px';box.appendChild(f);
   loadYT(function(){
     if(f.parentNode!==box)return;
-    musP=new YT.Player(f,{events:{onError:function(e){musMsg('Error '+e.data+': '+(YT_ERR[e.data]||'unknown'))}}});
+    musP=new YT.Player(f,{events:{
+      onReady:function(e){musReady=true;e.target.setVolume(S.mvol);musTimer=setInterval(musTick,500)},
+      onStateChange:function(e){
+        musIcon(e.data===1||e.data===3);
+        try{var d=e.target.getVideoData();if(d&&d.title)$('mus-title').textContent=d.title}catch(x){}
+        if(e.data===0&&!p.l)musStep(1,true);
+      },
+      onError:function(e){musMsg('Error '+e.data+': '+(YT_ERR[e.data]||'unknown'))}
+    }});
   },function(){musMsg('Could not load the YouTube API (blocked or offline).')});
 }
+$('mus-prev').innerHTML=I_PREV;$('mus-next').innerHTML=I_NEXT;musIcon(false);
+$('mus-prev').onclick=function(){musStep(-1)};
+$('mus-next').onclick=function(){musStep(1)};
+$('mus-play').onclick=function(){
+  if(musP&&musReady){var st=musP.getPlayerState();if(st===1||st===3)musP.pauseVideo();else musP.playVideo()}
+  else if(musA){if(musA.paused)musA.play().catch(function(){});else musA.pause()}
+};
+$('mus-seek').oninput=function(){musDrag=true;$('mus-cur').textContent=fmt(this.value/1000*musDur())};
+$('mus-seek').onchange=function(){
+  var t=this.value/1000*musDur();musDrag=false;
+  if(musP&&musReady)musP.seekTo(t,true);else if(musA&&musA.duration)musA.currentTime=t;
+};
+$('mus-vol').value=S.mvol;
+$('mus-vol').oninput=function(){S.mvol=+this.value;save();if(musP&&musReady)musP.setVolume(S.mvol);if(musA)musA.volume=S.mvol/100};
 $('mus-btn').onclick=function(){
   $('cal').classList.remove('on');$('snd').classList.remove('on');
   var pn=$('mus');pn.classList.toggle('on');
@@ -700,9 +774,9 @@ $('mus-btn').onclick=function(){
 };
 $('mus-sel').onchange=function(){S.plSel=+this.value;save();musRender(true)};
 $('mus-add').onclick=function(){
-  var e=embedOf($('mus-url').value),name=$('mus-name').value.trim();
-  if(!e){musMsg('Please paste a YouTube or Spotify link (playlist, album or video).');return}
-  if(!name)name=(e.t==='sp'?'Spotify':'YouTube')+' '+(S.playlists.length+1);
+  var raw=$('mus-url').value.trim(),e=embedOf(raw),name=$('mus-name').value.trim();
+  if(!e){musMsg('Paste a YouTube or Spotify link, or an audio file path like music/song.m4a');return}
+  if(!name)name=e.t==='file'?decodeURIComponent(e.f.split('?')[0].split('/').pop().replace(/\.[^.]+$/,'')):(e.t==='sp'?'Spotify':'YouTube')+' '+(S.playlists.length+1);
   e.n=name;S.playlists.push(e);S.plSel=S.playlists.length-1;
   $('mus-name').value='';$('mus-url').value='';save();musRender(true);musMsg('Added.');
 };
